@@ -1,0 +1,131 @@
+https://www.youtube.com/watch?v=wd5RQfrnaUU
+
+1.dotnet new webapi -o TokenDemo
+2.dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
+3.dotnet add package Microsoft.AspNetCore.Identity
+4.dotnet add package Microsoft.AspNetCore.Identity.EntityFrameworkCore
+5.dotnet add package Microsoft.EntityFrameworkCore.Tools
+6.dotnet add package Microsoft.EntityFrameworkCore.SqlServer
+7.Create new Folder - Authentication->ApplicationDbContext.cs & ApplicationUser.cs
+8.ApplicationUser.cs-> public class ApplicationUser:IdentityUser.......using Microsoft.AspNetCore.Identity
+9.ApplicationDbContext.cs->
+public class ApplicationDbContext:IdentityDbContext<ApplicationUser>
+    {
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options):base(options)
+        {
+
+        }
+
+        protected override void OnModelCreating(ModelBuilder builder)
+        {
+            base.OnModelCreating(builder);
+        }
+    }
+10.Startup.cs:
+Add these namespaces:
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.SqlServer;
+using TokenDemo.Authentication;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+
+//EntityFrameworkCore
+            services.AddDbContext<ApplicationDbContext>(t=>t.UseSqlServer(Configuration.GetConnectionString("ConnStr")));
+            //For Identity
+            services.AddIdentity<ApplicationUser,IdentityRole>()
+                .AddEntityFrameworkStores<ApplicationDbContext>()
+                .AddDefaultTokenProviders();
+            //For Authentication
+            services.AddAuthentication(t=>{
+                t.DefaultAuthenticateScheme=JwtBearerDefaults.AuthenticationScheme;
+                t.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                t.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+                })
+                //Adding Jwt Bearer
+                .AddJwtBearer(t=>
+                {
+                    t.SaveToken = true;
+                    t.RequireHttpsMetadata = false;
+                    t.TokenValidationParameters = new TokenValidationParameters()
+                    {
+                        ValidateIssuer = true,
+                        ValidateAudience = true,
+                        ValidAudience = Configuration["JWT:ValidAudience"],
+                        ValidIssuer = Configuration["ValidIssuer"],
+                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["JWT:IgningKey"]))   
+                    };
+                });
+
+11.Add Model->RegisterModel.cs:
+using System;
+using System.ComponentModel.DataAnnotations;
+namespace TokenDemo.Model
+{
+    public class RegisterModel
+    {
+        [Required (ErrorMessage = "User name is required")]
+        public string UserName{get;set;}
+        [Required (ErrorMessage = "Email is required")]
+        public string Email{get;set;}
+        [Required (ErrorMessage = "Password is required")]
+        public string Password{get;set;}
+    }
+}
+
+12.Add Response.cs in Authentication folder and add 2 parameters->Status & Message
+13.Add AuthenticationController.cs:
+[Route("[controller]")]
+    [ApiController]
+    public class AuthenticationController:ControllerBase
+    {
+        private readonly UserManager<ApplicationUser> userManager;
+        private readonly RoleManager<ApplicationUser> roleManager;
+        private readonly IConfiguration configuration;
+
+        public AuthenticationController(UserManager<ApplicationUser> _userManager,RoleManager<ApplicationUser> _roleManager,IConfiguration _configuration)
+        {
+            this.userManager = _userManager;
+            this.roleManager = _roleManager;
+            this.configuration = _configuration;
+        }
+
+        [HttpPost]
+        [Route("Register")]
+        public async Task<IActionResult> Register([FromBody] RegisterModel model)
+        {
+            var userExist = await userManager.FindByNameAsync(model.UserName);
+            if(userExist!=null)//If user already exists
+                return StatusCode(StatusCodes.Status500InternalServerError, new Response{Status = "Error", Message="User already exists"});
+            ApplicationUser user = new ApplicationUser()
+            {
+                Email = model.Email,
+                SecurityStamp = Guid.NewGuid().ToString(),
+                UserName = model.UserName
+            };
+            var result = await userManager.CreateAsync(user,model.Password);
+            if(!result.Succeeded)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new Response{Status = "Error", Message="User creation failed"});
+            }
+            return Ok(new Response{Status="Success", Message="User Created Successfully"});
+        }
+
+14.appsettings.json:Add the following
+"ConnectionStrings": {
+    "ConnStr": "Server=LAPTOP-5CN627JL;Database=TokenDemo;Integrated Security=True;"
+  },
+  "JWT": {
+    "ValidAudience": "User",
+    "ValidIssuer": "http://localhost:5000",
+    "Secret": "SSKey"
+  }
+
+15.dotnet ef Migrations add test
+16.dotnet ef database update
+
+
+
+
+
